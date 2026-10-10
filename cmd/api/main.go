@@ -12,8 +12,8 @@ import (
 
 
 func main(){
-	store := store.NewMemoryStore()
-    h:= api.NewHandler(store)
+	sharedStore := store.NewMemoryStore()
+    h:= api.NewHandler(sharedStore)
 
 	mux := http.NewServeMux()
 

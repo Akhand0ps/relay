@@ -26,5 +26,3 @@ type Event struct {
 	Status         EventStatus      `json:"status"`
 	CreatedAt      time.Time        `json:"created_at"`
 }
-
-
