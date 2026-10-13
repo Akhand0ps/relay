@@ -8,21 +8,24 @@ import (
 	"github.com/akhand0ps/relay/internal/id"
 	"github.com/akhand0ps/relay/internal/models"
 	"github.com/akhand0ps/relay/internal/store"
+	"github.com/akhand0ps/relay/internal/worker"
 )
 
 
 type Handler struct {
 
 	store *store.MemoryStore //lowecase s-> means it is unexported
+	workerPool *worker.WorkerPool
 }
 
 // to make the store exported, provide a constructor function
 
-func NewHandler(s *store.MemoryStore) *Handler{
+func NewHandler(s *store.MemoryStore,wp *worker.WorkerPool) *Handler{
 
-	return &Handler{store: s}
+	return &Handler{store: s,workerPool: wp}
 
 }
+
 
 func HealthCheckHandler(w http.ResponseWriter,r * http.Request) {
 	w.Header().Set("Content-Type","applicatio/json")
@@ -79,6 +82,33 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 	}
 
 
+	endpoints,err := h.store.FindEndPointForEvent(event.Type)
+
+	if err != nil{
+
+		http.Error(w,"Failed to finda endpoints",http.StatusInternalServerError)
+		return
+	}
+
+	for _,ep := range endpoints {
+
+		
+		delivery := models.Delivery{
+			ID: id.GenerateEventId("del"),
+			EventId: event.ID,
+			EndpointId: ep.ID,
+			Status: models.DeliveryStatusQueued,
+			CreatedAt: time.Now(),
+		}
+
+		h.workerPool.Queue <- worker.DeliveryTask{
+			Delivery: delivery,
+			Endpoint: ep,
+			Event: event,
+		}
+	}
+
+
 	w.Header().Set("Content-Type","application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -107,4 +137,71 @@ func (h * Handler) GetEventHandler(w http.ResponseWriter,r * http.Request){
 	w.WriteHeader(http.StatusOK)
 	
 	json.NewEncoder(w).Encode(&event)
+}
+
+func (h * Handler) CreateEndpointHandler(w http.ResponseWriter,r * http.Request){
+
+
+	if r.Method != http.MethodPost {
+		http.Error(w,"Method not allowed",http.StatusMethodNotAllowed)
+		return 
+	}
+
+	var req struct {
+		URL string  `json:"url"`
+		Event_types []string `json:"event_types"`
+	}
+
+	if err:= json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w,"Invalid JSON payload",http.StatusBadRequest)
+		return
+	}
+
+	if req.URL == "" {
+		http.Error(w,"URL is required",http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Event_types) == 0 {
+		http.Error(w,"Event types is required",http.StatusBadRequest)
+		return
+	}
+    
+
+
+	
+	endpoint := models.Endpoint{
+		ID: id.GenerateEventId("ep"),
+		URL:req.URL,
+		EventTypes: req.Event_types,
+		Status: models.EndpointStatusActive,
+		CreatedAt: time.Now(),
+	}
+
+	if err := h.store.SaveEndpoint(endpoint); err != nil {
+		http.Error(w,"Failed to save endpoint",http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(endpoint)
+}
+
+func (h * Handler) ListEndpointHandler(w http.ResponseWriter,r * http.Request){
+
+	if r.Method != http.MethodGet {
+		http.Error(w,"Method not allowed",http.StatusMethodNotAllowed)
+		return 
+	}
+
+	endpoints,err := h.store.ListEndpoint()
+	if err != nil {
+		http.Error(w,"Failed to list endpoints",http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(endpoints)
 }

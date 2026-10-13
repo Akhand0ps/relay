@@ -6,6 +6,7 @@ import (
 
 	"github.com/akhand0ps/relay/internal/api"
 	"github.com/akhand0ps/relay/internal/store"
+	"github.com/akhand0ps/relay/internal/worker"
 )
 
 
@@ -13,7 +14,12 @@ import (
 
 func main(){
 	sharedStore := store.NewMemoryStore()
-    h:= api.NewHandler(sharedStore)
+
+	wp := worker.NewWorkerPool(100) //buffer of 100 tasks
+
+	wp.Start(3) // 3 workers in background
+
+    h:= api.NewHandler(sharedStore,wp) //passing the workerpool
 
 	mux := http.NewServeMux()
 
@@ -22,6 +28,8 @@ func main(){
 	mux.HandleFunc("/health",api.HealthCheckHandler)
 	mux.HandleFunc("POST /v1/events",h.IngestEventHandler)
 	mux.HandleFunc("GET  /v1/events/{id}",h.GetEventHandler)
+	mux.HandleFunc("POST /v1/endpoints",h.CreateEndpointHandler)
+	mux.HandleFunc("GET  /v1/endpoints",h.ListEndpointHandler)
 
 
 

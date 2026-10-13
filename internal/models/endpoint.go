@@ -20,8 +20,7 @@ type Endpoint struct {
 
 	ID              string         `json:"id"`
 	URL             string         `json:"url"`
-	EventID         []string       `json:"event_ids"`
+	EventTypes      []string       `json:"event_types"`
 	Status          EndpointStatus `json:"status"`
 	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`	
 }
