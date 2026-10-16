@@ -42,14 +42,35 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 		return
 	}
 
+	idempontencyKey := r.Header.Get("Idempotency-Key")
+
+	if idempontencyKey != ""{
+
+		//check if we've already seen this event before
+
+		if existingEvent,exists := h.store.GetByIdempotencyKey(idempontencyKey);exists {
+
+			w.Header().Set("Content-Type","application/json")
+			w.WriteHeader(http.StatusOK) //return 200Ok as it is duplicate
+
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":existingEvent.ID,
+				"status":existingEvent.Status,
+				"message":"Duplicate event detected,returning existing record",
+			})
+
+			return //finlayy return the duplicate event;
+		}
+	}
+
 	var req struct {
 
 		Type string   			`json:"type"`
-		Payload json.RawMessage `json:"data"`
+		Payload json.RawMessage  `json:"data"`
 	}
 
 
-	// decode incoming JOSN BODY
+	// decode incoming JSON BODY
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 
@@ -59,17 +80,19 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 
 	//validation 
 
-	if req.Type == ""{
-		http.Error(w,"Event type is required",http.StatusBadRequest)
+	if req.Type == "" || len(req.Payload) == 0{
+		http.Error(w,"Event type and payload are required",http.StatusBadRequest)
 		return
 	}
 
 	//create event
 
+
 	event := models.Event{
 		ID: id.GenerateEventId("evt"),
 		Type: req.Type,
 		Payload:  req.Payload,
+		IdempotencyKey: idempontencyKey,
 		Status: models.StatusQueued,
 		CreatedAt: time.Now(),
 	}
@@ -161,12 +184,10 @@ func (h * Handler) CreateEndpointHandler(w http.ResponseWriter,r * http.Request)
 		http.Error(w,"URL is required",http.StatusBadRequest)
 		return
 	}
-
 	if len(req.Event_types) == 0 {
 		http.Error(w,"Event types is required",http.StatusBadRequest)
 		return
 	}
-    
 
 
 	
@@ -174,6 +195,7 @@ func (h * Handler) CreateEndpointHandler(w http.ResponseWriter,r * http.Request)
 		ID: id.GenerateEventId("ep"),
 		URL:req.URL,
 		EventTypes: req.Event_types,
+		Secret: id.GenerateEventId("whsec_"),
 		Status: models.EndpointStatusActive,
 		CreatedAt: time.Now(),
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/akhand0ps/relay/internal/models"
+	"github.com/akhand0ps/relay/internal/signature"
 )
 
 
@@ -58,12 +59,33 @@ func (wp *WorkerPool) processTask(workerId int,task DeliveryTask){
 
 	fmt.Printf("[Worker %d] Delivering %s to %s...\n",workerId,task.Event.Type,task.Endpoint.URL)
 
-	reqBody := bytes.NewReader(task.Event.Payload)
+	// reqBody := bytes.NewReader(task.Event.Payload)
 
-	resp,err := wp.client.Post(task.Endpoint.URL,"application/json",reqBody)
+	// resp,err := wp.client.Post(task.Endpoint.URL,"application/json",reqBody)
 
+	//set custom headers
 
+	now := time.Now().Unix()
+	sig := signature.Sign(task.Endpoint.Secret,now,task.Event.Payload)
+
+	req,err := http.NewRequest("POST",task.Endpoint.URL,
+		bytes.NewReader(task.Event.Payload))
+	
+	if err != nil{
+
+		fmt.Printf("[Worker %d] Failed to create request: %v\n",workerId,err)
+		return
+	}
+
+	req.Header.Set("Content-Type","application/json")
+	req.Header.Set("X-Relay-Event-Id",task.Event.ID)
+	req.Header.Set("X-Relay-TimeStamp",fmt.Sprintf("%d",now))
+	req.Header.Set("X-Relay-Signature",sig)
+
+	resp,err := wp.client.Do(req)
 	statusCode :=0
+
+	
 
 	if resp!=nil{
 

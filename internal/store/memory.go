@@ -11,6 +11,8 @@ type MemoryStore struct {
 	events map[string]models.Event
 	mu  sync.RWMutex
 	endpoints map[string]models.Endpoint
+
+	idempotencyKeys map[string]models.Event
 }
 
 
@@ -19,6 +21,7 @@ func NewMemoryStore() *MemoryStore{
 	return &MemoryStore{
 		events: make(map[string]models.Event),
 		endpoints: make(map[string]models.Endpoint),
+		idempotencyKeys: make(map[string]models.Event),
 	}
 }
 
@@ -28,6 +31,10 @@ func (m *MemoryStore) Save(event models.Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events[event.ID] = event
+
+	if event.IdempotencyKey != ""{
+		m.idempotencyKeys[event.IdempotencyKey] = event
+	}
 	return nil
 }
 
@@ -102,5 +109,18 @@ func (m * MemoryStore) FindEndPointForEvent(eventType string) ([]models.Endpoint
 	return endpoints,nil
 }
 
+
+func (m * MemoryStore) GetByIdempotencyKey(key string)(*models.Event,bool){
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	event,exists := m.idempotencyKeys[key]
+
+	if !exists {
+		return  nil,false
+	}
+	return &event,true
+}
 
 
