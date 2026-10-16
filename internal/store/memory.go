@@ -106,6 +106,10 @@ func (m * MemoryStore) FindEndPointForEvent(eventType string) ([]models.Endpoint
 			}
 		}
 	}
+
+	if len(endpoints) == 0 {
+		return nil,errors.New("No endpoints found for this event type")
+	}
 	return endpoints,nil
 }
 

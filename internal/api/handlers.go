@@ -227,3 +227,78 @@ func (h * Handler) ListEndpointHandler(w http.ResponseWriter,r * http.Request){
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(endpoints)
 }
+
+func (h * Handler) ReplayHandler(w http.ResponseWriter, r *http.Request){
+
+  //i will get event id from url
+
+
+	if r.Method != http.MethodPost {
+		http.Error(w,"Method not allowed",http.StatusMethodNotAllowed)
+		return 
+	}
+
+	var req struct {
+
+		Event_ids []string `json:"event_ids"`
+	}
+    
+	if err:= json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w,"Invalid request body",http.StatusBadRequest)
+		return
+	}
+	
+
+	if len(req.Event_ids) == 0 {
+		http.Error(w,"EventIds are required",http.StatusBadRequest)
+		return
+	}
+
+	//find the the types of the each events and create the delivery and add it in the queue
+
+
+	for _,eventId := range req.Event_ids {
+
+		event,err := h.store.Get(eventId)
+		
+		if err != nil{
+
+			http.Error(w,"Event not found",http.StatusNotFound)
+			return
+		}
+		//find the required endpoints of that event
+
+		endpoints,err := h.store.FindEndPointForEvent(event.Type)
+		
+		if err != nil{
+			http.Error(w,"Endpoint not ffound",http.StatusNotFound)
+			return
+		}
+
+		//create the delivery and add it in the queue
+		
+		for _,endpoint := range endpoints {
+
+			delivery := models.Delivery {
+				ID: id.GenerateEventId("del"),
+				EventId: event.ID,
+				EndpointId: endpoint.ID,
+				Status: models.DeliveryStatusQueued,
+				CreatedAt: time.Now(),
+			}
+
+			h.workerPool.Queue <- worker.DeliveryTask{
+				Delivery: delivery,
+				Endpoint: endpoint,
+				Event: *event,
+			}
+		}			
+	}
+	
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":"success",
+		"message":"Events replayed successfully",
+	})
+}

@@ -31,6 +31,8 @@ func main(){
 	mux.HandleFunc("POST /v1/endpoints",h.CreateEndpointHandler)
 	mux.HandleFunc("GET  /v1/endpoints",h.ListEndpointHandler)
 
+	mux.HandleFunc("POST /v1/events/replay",h.ReplayHandler)
+
 
 
 	port := ":3000"
