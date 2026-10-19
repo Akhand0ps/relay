@@ -128,3 +128,10 @@ func (m * MemoryStore) GetByIdempotencyKey(key string)(*models.Event,bool){
 }
 
 
+func (m *MemoryStore) SaveDelivery(d models.Delivery) error {
+    return nil
+}
+
+func (m *MemoryStore) RecordDeliveryAttempt(attempt models.DeliveryAttempt) error {
+    return nil
+}

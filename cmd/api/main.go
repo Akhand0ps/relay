@@ -13,7 +13,19 @@ import (
 
 
 func main(){
-	sharedStore := store.NewMemoryStore()
+	// sharedStore := store.NewMemoryStore()
+
+	connStr := "postgres://postgres:pgpassword@localhost:5432/relay?sslmode=disable"
+
+	sharedStore,err := store.NewPostgresStore(connStr)
+
+	if err != nil{
+
+	 fmt.Printf("Database connection failed: %v\n",err)
+	 return
+	}
+
+	
 
 	wp := worker.NewWorkerPool(100) //buffer of 100 tasks
 

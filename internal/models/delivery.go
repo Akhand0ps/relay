@@ -30,3 +30,12 @@ type Delivery struct {
 	CreatedAt           time.Time            `json:"created_at"`
 	UpdatedAt           time.Time            `json:"updated_at"`
 }
+
+type DeliveryAttempt struct {
+	ID     string    `json:"id"`
+	DeliveryId string  `json:"deliver_id"`
+	StatusCode  int  `json:"status_code"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	ExecutionDurationMs int `json:"execution_duration_ms"`
+	AttemptedAt   time.Time  `json:"attempted_at"`
+}

@@ -21,7 +21,7 @@ type Handler struct {
 
 // to make the store exported, provide a constructor function
 
-func NewHandler(s *store.MemoryStore,wp *worker.WorkerPool) *Handler{
+func NewHandler(s store.Store,wp *worker.WorkerPool) *Handler{
 
 	return &Handler{store: s,workerPool: wp}
 

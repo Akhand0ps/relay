@@ -13,4 +13,7 @@ type Store interface {
 	ListEndpoint()([]models.Endpoint,error)
 	FindEndPointForEvent(eventType string) ([]models.Endpoint,error)
 	GetByIdempotencyKey(key string)(*models.Event,bool)  
+
+	SaveDelivery(d models.Delivery) error
+	RecordDeliveryAttempt(attempt models.DeliveryAttempt) error
 }
