@@ -14,7 +14,8 @@ import (
 
 type Handler struct {
 
-	store *store.MemoryStore //lowecase s-> means it is unexported
+	//store *store.MemoryStore //lowecase s-> means it is unexported
+	store store.Store
 	workerPool *worker.WorkerPool
 }
 
