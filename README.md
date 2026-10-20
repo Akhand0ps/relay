@@ -4,6 +4,8 @@
 > Publish events once, reliably deliver them everywhere.
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![k6 Tested](https://img.shields.io/badge/k6-Load%20Tested-7D64FF?style=flat&logo=k6&logoColor=white)](https://k6.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Architecture: Clean](https://img.shields.io/badge/Architecture-Clean%20Go-blue.svg)]()
 
@@ -11,15 +13,14 @@
 
 ## 📌 What is Relay?
 
-Relay is a hosted webhook delivery engine built in Go. Instead of every microservice building its own webhook retries, queue consumers, cryptographic signing, dead-letter queues, and replay mechanisms, Relay provides them as plug-and-play infrastructure.
+Relay is a developer-focused webhook delivery and dispatch engine written in Go. Instead of every microservice hand-rolling its own retry loops, worker queues, cryptographic signatures, dead-letter storage, and audit logs, Relay provides this out of the box as production-grade infrastructure.
 
-Developers publish events with a single HTTP call (`POST /v1/events`), and Relay guarantees delivery to all subscribed customer endpoints—even during network outages, slow destinations, or third-party server crashes.
+Applications ingest events with a single HTTP call (`POST /v1/events`), and Relay guarantees resilient delivery to all subscribed destinations—even under severe network failures, flaky endpoints, or high concurrent load.
 
 ---
 
 ## 🏗️ Architecture & Core Flow
 
-### Phase 1 Core Engine: Event Matching & Worker Queue
 <p align="center">
   <img src="./docs/arch1.svg" alt="Relay Dispatch & Worker Architecture" width="800"/>
 </p>
@@ -31,14 +32,14 @@ Developers publish events with a single HTTP call (`POST /v1/events`), and Relay
          ▼
      Relay API
          │
-         ├── 1. Deduplicate & Persist Event
-         ├── 2. Match Subscribed Endpoints
+         ├── 1. Idempotency Check (PostgreSQL)
+         ├── 2. Persist Event & Fetch Subscribed Endpoints
          ├── 3. Enqueue Delivery Tasks
          ▼
    Worker Pool (Concurrent Goroutines)
          │
-         │ Sign with HMAC-SHA256 (X-Relay-Signature)
-         │ HTTP POST with 10s Timeout
+         │ Sign Payload with HMAC-SHA256 (X-Relay-Signature)
+         │ HTTP POST with Hard 10s Timeout
          ▼
   Customer Webhook Destination
          │
@@ -46,7 +47,7 @@ Developers publish events with a single HTTP call (`POST /v1/events`), and Relay
     ▼                               ▼
  [2xx Success]             [Transient 5xx / 429 / Timeout]
     │                               │
-  DONE                      Exponential Backoff + Jitter
+  DONE                      Exponential Backoff + Full Jitter
                                     │
                             Retry 1 (5s)
                             Retry 2 (30s)
@@ -66,65 +67,100 @@ Developers publish events with a single HTTP call (`POST /v1/events`), and Relay
 
 ## ✨ Features Implemented
 
-* ⚡ **Non-Blocking Ingestion:** Returns `202 Accepted` in `<10ms` while processing deliveries asynchronously in the background.
-* 🔒 **Cryptographic Webhook Signatures:** Signs every payload using `HMAC-SHA256` (`X-Relay-Signature` & `X-Relay-Timestamp`) to prevent tampering and replay attacks.
-* 🛡️ **Full Idempotency Protection:** Eliminates duplicate charges and events via `Idempotency-Key` tracking.
-* 🔄 **Exponential Backoff with Full Jitter:** Protects destination servers from the Thundering Herd Problem by staggering retry intervals.
-* 💀 **Dead Letter Queue (DLQ):** Safely isolates permanently failing endpoints after max attempts.
-* 🔁 **Immutable Replay Engine:** Replay past failed events on demand (`POST /v1/events/replay`) without mutating original audit logs.
-* ⏱️ **Zero-Hang Workers:** Hardened HTTP client with 10-second timeouts prevents slow endpoints from exhausting worker threads.
+* ⚡ **Non-Blocking Ingestion:** Returns `202 Accepted` in `<10ms` while offloading matching and dispatch to background workers.
+* 🐘 **Durable PostgreSQL Engine:** Production-ready persistence layer powered by `pgxpool` with connection pooling, transaction isolation, and containerized SQL migrations.
+* 🛡️ **Race-Proof Idempotency:** Eliminates duplicate webhook sends via `Idempotency-Key` checking, verified against high-concurrency race conditions.
+* 🔒 **Cryptographic Webhook Signatures:** Signs every outgoing request with `HMAC-SHA256` (`X-Relay-Signature` & `X-Relay-Timestamp`) to prevent tampering and replay attacks.
+* 🔄 **Exponential Backoff with Full Jitter:** Prevents thundering herds during destination outages by staggering retries across randomized intervals.
+* 💀 **Dead Letter Queue (DLQ) & Audit Log:** Records every delivery attempt, status code, and latency in PostgreSQL for post-mortem analysis.
+* 🔁 **Immutable Replay Engine:** Replay past failed deliveries on demand (`POST /v1/events/replay`) without mutating original audit histories.
+* ⏱️ **Zero-Hang Workers:** Hardened HTTP client with a 10-second timeout prevents slow endpoints from exhausting worker pools.
+* 📊 **Performance & Load Tested:** Validated with **k6** load testing suites for smoke testing, sustained throughput, and concurrent idempotency.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- [Go 1.22+](https://go.dev/dl/)
+- [Docker & Docker Compose](https://docs.docker.com/compose/)
+- [k6](https://k6.io/docs/get-started/installation/) *(optional, for load testing)*
+
+### 1. Start PostgreSQL
+Spin up the PostgreSQL 16 container with automatic schema migrations:
+```bash
+docker compose up -d
+```
+*Migrations in `migrations/001_init.sql` execute automatically upon initialization.*
+
+### 2. Run the Relay Service
+```bash
+go run cmd/api/main.go
+```
+The server will start listening on `http://localhost:3000`.
+
+### 3. Verify Health
+```bash
+curl -i http://localhost:3000/health
+```
+```text
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"status":"ok"}
+```
 
 ---
 
 ## 📡 API Reference
 
 ### 1. Register an Endpoint
-Tell Relay where to deliver specific event types.
+Subscribe a destination URL to specific event topics.
 
 ```bash
-POST /v1/endpoints
-Content-Type: application/json
-
-{
-  "url": "https://api.example.com/webhooks",
-  "event_types": ["invoice.paid", "user.created"]
-}
+curl -X POST http://localhost:3000/v1/endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://webhook.site/your-unique-url",
+    "event_types": ["order.created", "invoice.paid"]
+  }'
 ```
+
 **Response (`201 Created`):**
 ```json
 {
-  "id": "ep_01a1409d-...",
-  "url": "https://api.example.com/webhooks",
-  "event_types": ["invoice.paid", "user.created"],
-  "secret": "whsec_01a1409d-...",
+  "id": "ep_0192e471-70bf-7128-b2ef-3ad40a1fb8e0",
+  "url": "https://webhook.site/your-unique-url",
+  "event_types": ["order.created", "invoice.paid"],
+  "secret": "whsec_0192e471-70bf-75a0-9706-e63d893ad7a2",
   "status": "active",
-  "created_at": "2026-10-17T..."
+  "created_at": "2026-10-20T14:30:00Z"
 }
 ```
 
 ---
 
 ### 2. Ingest an Event
-Publish an event to Relay.
+Ingest a webhook payload. Relay deduplicates via `Idempotency-Key` and matches all active endpoints.
 
 ```bash
-POST /v1/events
-Content-Type: application/json
-Idempotency-Key: inv_req_9981
-
-{
-  "type": "invoice.paid",
-  "data": {
-    "invoice_id": "inv_1837",
-    "amount": 4999,
-    "currency": "USD"
-  }
-}
+curl -X POST http://localhost:3000/v1/events \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: req_order_9981" \
+  -d '{
+    "type": "order.created",
+    "data": {
+      "order_id": "ord_1024",
+      "amount": 25000,
+      "currency": "INR"
+    }
+  }'
 ```
+
 **Response (`202 Accepted`):**
 ```json
 {
-  "id": "evt_01a1409f-...",
+  "id": "evt_0192e472-8bfb-7892-9382-749e7bdac021",
   "message": "Event accepted for async processing",
   "status": "queued"
 }
@@ -132,17 +168,26 @@ Idempotency-Key: inv_req_9981
 
 ---
 
-### 3. Replay Failed Events
-Re-dispatch events without modifying past audit trails.
+### 3. Fetch Event by ID
+Query the persisted event state from PostgreSQL.
 
 ```bash
-POST /v1/events/replay
-Content-Type: application/json
-
-{
-  "event_ids": ["evt_01a1409f-..."]
-}
+curl http://localhost:3000/v1/events/evt_0192e472-8bfb-7892-9382-749e7bdac021
 ```
+
+---
+
+### 4. Replay Events
+Trigger redelivery of past events without modifying past audit trails.
+
+```bash
+curl -X POST http://localhost:3000/v1/events/replay \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_ids": ["evt_0192e472-8bfb-7892-9382-749e7bdac021"]
+  }'
+```
+
 **Response (`200 OK`):**
 ```json
 {
@@ -155,16 +200,34 @@ Content-Type: application/json
 
 ## 🔐 Webhook Verification (Customer Side)
 
-Every webhook delivered by Relay includes headers:
+Every webhook delivered by Relay includes security headers:
 ```http
-X-Relay-Event-Id: evt_01a1...
-X-Relay-Timestamp: 1791024000
-X-Relay-Signature: v1=4f3b2ac7...
+X-Relay-Event-Id: evt_0192e472...
+X-Relay-Timestamp: 1792435200
+X-Relay-Signature: v1=5d41402abc4b2a76b9719d911017c592...
 ```
 
-Customers verify authenticity using their shared endpoint secret:
-```text
-signature = HMAC-SHA256(secret, timestamp + "." + raw_body)
+Customers verify the payload integrity and authenticity using their endpoint secret:
+```go
+expectedSig := hmacSha256(secret, timestamp + "." + rawBody)
+isValid := hmac.Equal([]byte(expectedSig), []byte(receivedSig))
+```
+
+---
+
+## 🧪 Performance & Load Testing (k6)
+
+Relay includes automated **k6** test suites in `tests/k6/` to validate throughput, latency SLAs, and concurrency guarantees:
+
+```bash
+# 1. Smoke test: 1,000 requests across 10 VUs
+k6 run tests/k6/smoke.js
+
+# 2. Ingestion latency benchmark under sustained traffic
+k6 run tests/k6/ingest.js
+
+# 3. Concurrent idempotency test: 20 simultaneous duplicate requests
+k6 run tests/k6/idempotency.js
 ```
 
 ---
@@ -175,24 +238,35 @@ signature = HMAC-SHA256(secret, timestamp + "." + raw_body)
 relay/
 ├── cmd/
 │   └── api/
-│       └── main.go                 # Application bootstrap & dependency injection
+│       └── main.go                 # App bootstrap, DB pool init & DI wiring
 ├── internal/
 │   ├── api/
-│   │   └── handlers.go             # HTTP handlers & route logic
+│   │   └── handlers.go             # HTTP handlers with idempotency logic
 │   ├── id/
-│   │   └── id.go                   # Time-ordered UUIDv7 generator
+│   │   └── id.go                   # Time-ordered UUIDv7 generator (evt_, ep_, whsec_)
 │   ├── models/
-│   │   ├── delivery.go             # Delivery state machine model
-│   │   ├── endpoint.go             # Webhook subscriber model
+│   │   ├── delivery.go             # Delivery and attempt data models
+│   │   ├── endpoint.go             # Endpoint subscription model
 │   │   └── event.go                # Ingested event model
 │   ├── signature/
-│   │   └── signature.go            # HMAC-SHA256 cryptographic signer
+│   │   └── signature.go            # HMAC-SHA256 signer & verifier
 │   ├── store/
-│   │   └── memory.go               # Concurrent thread-safe in-memory store
+│   │   ├── memory.go               # In-memory store (for fast unit testing)
+│   │   ├── postgres.go             # Production PostgreSQL store (pgxpool)
+│   │   └── store.go                # Store interface abstraction
 │   └── worker/
-│       ├── retry.go                # Exponential backoff & jitter calculations
-│       └── worker.go               # Background worker pool & dispatcher
+│       ├── retry.go                # Exponential backoff + full jitter algorithm
+│       └── worker.go               # Concurrent worker pool & delivery dispatcher
+├── migrations/
+│   └── 001_init.sql                # Relational schema (events, endpoints, deliveries)
+├── tests/
+│   └── k6/                         # k6 performance & concurrency test suites
+│       ├── idempotency.js
+│       ├── ingest.js
+│       └── smoke.js
+├── docker-compose.yml              # PostgreSQL 16 container definition
 ├── go.mod
+├── go.sum
 └── README.md
 ```
 
@@ -200,11 +274,11 @@ relay/
 
 ## 🗺️ Roadmap
 
-- [x] Phase 1: Ingestion API, Worker Pool, Retries, Signatures, Idempotency, Replay
-- [ ] Phase 2: PostgreSQL Persistence (Audit logs, Durable Storage)
-- [ ] Phase 3: Redis Distributed Queue
-- [ ] Phase 4: Per-tenant Concurrency & Rate Limiting (Token Bucket)
-- [ ] Phase 5: Observability (Prometheus Metrics & Tracing)
+- [x] **Phase 1: Core Engine** (Ingestion API, Worker Pool, Retries, Signatures, Idempotency, Replay)
+- [x] **Phase 2: PostgreSQL Persistence** (`pgxpool`, Migrations, Durable Deliveries & Audit Logs)
+- [ ] **Phase 3: Redis Distributed Queue** (Redis Streams for crash-proof asynchronous job dispatch)
+- [ ] **Phase 4: Per-tenant Concurrency & Rate Limiting** (Token Bucket / Leaky Bucket algorithms)
+- [ ] **Phase 5: Observability** (Prometheus metrics, Grafana dashboards, OpenTelemetry distributed tracing)
 
 ---
 
