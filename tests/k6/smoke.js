@@ -8,8 +8,8 @@ export const options = {
   scenarios: {
     load_test: {
       executor: 'shared-iterations',
-      vus: 10,
-      iterations: 1000,
+      vus: 100,
+      iterations: 10000,
       maxDuration: '2m',
     },
   },

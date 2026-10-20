@@ -6,13 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/akhand0ps/relay/internal/id"
 	"github.com/akhand0ps/relay/internal/models"
 	"github.com/akhand0ps/relay/internal/signature"
+	"github.com/akhand0ps/relay/internal/store"
 )
-
-
-
-
 
 
 type DeliveryTask struct {
@@ -28,15 +26,17 @@ type WorkerPool struct {
 
 	Queue chan DeliveryTask
 	client *http.Client
+	store store.Store
 }
 
-func NewWorkerPool(bufferSize int) *WorkerPool{
+func NewWorkerPool(bufferSize int,store store.Store) *WorkerPool{
 	
 	return &WorkerPool{
 		Queue: make(chan DeliveryTask,bufferSize),
 		client: &http.Client{
 			Timeout: 10*time.Second,
 		},
+		store: store, 
 	}
 }
 
@@ -85,8 +85,6 @@ func (wp *WorkerPool) processTask(workerId int,task DeliveryTask){
 	resp,err := wp.client.Do(req)
 	statusCode :=0
 
-	
-
 	if resp!=nil{
 
 		statusCode = resp.StatusCode
@@ -95,6 +93,27 @@ func (wp *WorkerPool) processTask(workerId int,task DeliveryTask){
 
 	}
 
+	var errMessage string
+	if err != nil {
+		errMessage = err.Error()
+	} else {
+		errMessage = ""
+	}
+
+	attempt := models.DeliveryAttempt{
+		ID: id.GenerateEventId("att"),
+		DeliveryId: task.Delivery.ID,
+		StatusCode: statusCode,
+		ErrorMessage: errMessage,
+		AttemptedAt: time.Now(),
+	}
+
+	if err :=wp.store.RecordDeliveryAttempt(attempt);err != nil{
+		
+		fmt.Printf("[Worker %d]Failed to record delivery attempt:%v\n",workerId,err)
+		//we might still want to retry or fail even if we can't record the attempt
+	}
+	//determine if delivery succeeded
 	if err == nil && statusCode >= 200 && statusCode < 300{
 
 		fmt.Printf("[Worker %d] ✔ Delivery SUCCESS to %s (Status: %d)\n",workerId,task.Endpoint.URL, statusCode)
@@ -125,9 +144,7 @@ func (wp *WorkerPool) processTask(workerId int,task DeliveryTask){
 
 		// wait for the backoff delay in the background,
 		// then push back to queue!!
-
 		go func (t DeliveryTask, d time.Duration){
-
 			fmt.Printf("[worker %d] Scheduling retry #%d for %s in %v...\n", workerId,t.Delivery.AttemptCount,t.Endpoint.URL,d)
 			time.Sleep(d)
 			wp.Queue <- t

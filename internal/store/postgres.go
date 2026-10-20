@@ -325,21 +325,20 @@ func (p *PostgresStore) SaveDelivery(d models.Delivery) error{
 }
 
 func (p *PostgresStore) RecordDeliveryAttempt(attempt models.DeliveryAttempt) error{
-	// ctx,cancel:= context.WithTimeout(context.Background(),5 * time.Second)
-	// defer cancel()
+	ctx,cancel:= context.WithTimeout(context.Background(),5 * time.Second)
+	defer cancel()
 
-// 	query := `
-//     INSERT INTO delivery_attempts (id, delivery_id, status_code, error_message, attempted_at)
-//     VALUES ($1, $2, $3, $4, $5)
-// `
+	query := `
+     INSERT INTO delivery_attempts (id, delivery_id, status_code, error_message, attempted_at)
+     VALUES ($1, $2, $3, $4, $5)
+`
 
-// 	_, err := p.pool.Exec(ctx, query,
-// 		attempt.ID,
-// 		attempt.DeliveryId,
-// 		attempt.StatusCode,
-// 		attempt.ErrorMessage,
-// 		attempt.AttemptedAt,
-// 	)
-	return nil
-// 
-}
+	_, err := p.pool.Exec(ctx, query,
+		attempt.ID,
+		attempt.DeliveryId,
+		attempt.StatusCode,
+		attempt.ErrorMessage,
+		attempt.AttemptedAt,
+	)
+	return err
+}	

@@ -154,6 +154,13 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 			CreatedAt: time.Now(),
 		}
 
+		//now saving the the delivey in the store
+		if err :=h.store.SaveDelivery(delivery); err != nil{
+			http.Error(w,"Failed to save delivery",http.StatusInternalServerError)
+			return
+		}
+
+		//add to worker pool
 		h.workerPool.Queue <- worker.DeliveryTask{
 			Delivery: delivery,
 			Endpoint: ep,
@@ -296,6 +303,14 @@ func (h * Handler) ReplayHandler(w http.ResponseWriter, r *http.Request){
 			http.Error(w,"Event not found",http.StatusNotFound)
 			return
 		}
+
+		if event.Status == models.StatusQueued || event.Status == models.EventStatus(models.DeliveryStatusProcessing){
+  
+			http.Error(w,"Event is already being processed",http.StatusConflict)
+			return
+              			
+			
+		}
 		//find the required endpoints of that event
 
 		endpoints,err := h.store.FindEndPointForEvent(event.Type)
@@ -316,6 +331,13 @@ func (h * Handler) ReplayHandler(w http.ResponseWriter, r *http.Request){
 				Status: models.DeliveryStatusQueued,
 				CreatedAt: time.Now(),
 			}
+
+			if err := h.store.SaveDelivery(delivery); err != nil {
+				http.Error(w,"Failed to save delivery",http.StatusInternalServerError)
+				return
+			}
+
+			
 
 			h.workerPool.Queue <- worker.DeliveryTask{
 				Delivery: delivery,

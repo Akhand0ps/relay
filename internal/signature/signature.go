@@ -21,3 +21,9 @@ func Sign(secret string,timestamp int64, payload []byte) string {
 	//return signature prefixed with "v1="
 	return "v1=" + hex.EncodeToString(mac.Sum(nil))
 }
+
+func Verify(secret string,timestamp int64 , payload []byte,receivedSig string) bool{
+
+    expectedSignature := Sign(secret,timestamp,payload)
+	return hmac.Equal([]byte(expectedSignature),[]byte(receivedSig))
+}

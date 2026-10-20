@@ -27,7 +27,7 @@ func main(){
 
 	
 
-	wp := worker.NewWorkerPool(100) //buffer of 100 tasks
+	wp := worker.NewWorkerPool(100,sharedStore) //buffer of 100 tasks
 
 	wp.Start(3) // 3 workers in background
 
