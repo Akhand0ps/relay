@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
+	// "log"
 
 	"github.com/akhand0ps/relay/internal/id"
 	"github.com/akhand0ps/relay/internal/models"
@@ -29,12 +31,13 @@ func NewHandler(s store.Store,wp *worker.WorkerPool) *Handler{
 
 
 func HealthCheckHandler(w http.ResponseWriter,r * http.Request) {
-	w.Header().Set("Content-Type","applicatio/json")
+	w.Header().Set("Content-Type","application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
+ 
 
 
 	if r.Method != http.MethodPost {
@@ -51,6 +54,8 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 
 		if existingEvent,exists := h.store.GetByIdempotencyKey(idempontencyKey);exists {
 
+			// log.Printf("IDEMPOTENCY LOOKUP: key=%s exists=%v",idempontencyKey,exists)
+
 			w.Header().Set("Content-Type","application/json")
 			w.WriteHeader(http.StatusOK) //return 200Ok as it is duplicate
 
@@ -61,7 +66,7 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 			})
 
 			return //finlayy return the duplicate event;
-		}
+		}	
 	}
 
 	var req struct {
@@ -98,9 +103,33 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 		CreatedAt: time.Now(),
 	}
 
-	//202 return
+	// log.Printf("ATTEMPTING SAVE: key=%s event_id=%s",event.IdempotencyKey,event.ID)
 
 	if err := h.store.Save(event); err != nil {
+		
+ 		if errors.Is(err,store.ErrDuplicateEvent){
+
+
+			existingEvent,ok := h.store.GetByIdempotencyKey(idempontencyKey)
+
+
+
+			if !ok{
+				
+				http.Error(w,"Failed to retrieve existing event",http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type","application/json")
+			w.WriteHeader(http.StatusOK) //return 200Ok as it is duplicate
+
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":existingEvent.ID,
+				"status":existingEvent.Status,
+				"message":"Duplicate event detected,",
+			})
+			return //finlayy return the duplicate event;
+		}
 		http.Error(w,"Failed to save event",http.StatusInternalServerError)
 		return
 	}

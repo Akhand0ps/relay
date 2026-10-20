@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/akhand0ps/relay/internal/models"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,6 +29,10 @@ func NewPostgresStore(connStr string) (*PostgresStore,error){
 
 	return &PostgresStore{pool:pool},nil
 }
+
+var ErrDuplicateEvent = errors.New("event already exists with this idempotency key")
+
+const UniqueViolationCode = "23505"
 
 func (p * PostgresStore) Save(event models.Event) error{
 
@@ -52,6 +58,19 @@ func (p * PostgresStore) Save(event models.Event) error{
 	)
 
 	if err != nil{
+
+		
+		var pgErr *pgconn.PgError
+        //unwrapp and check the err type
+		if errors.As(err,&pgErr){
+			
+			if pgErr.Code == UniqueViolationCode && pgErr.ConstraintName == "unique_tenant_idempotency"{
+
+				return ErrDuplicateEvent
+			}
+		}
+
+
 		return fmt.Errorf("failed to save event: %w",err)
 	}
 
@@ -258,12 +277,12 @@ func (p *PostgresStore) GetByIdempotencyKey(key string)(*models.Event,bool){
       
 	SELECT id,tenant_id,type,payload,idempotency_key,status,created_at
 	FROM events
-	WHERE idempotency_key = $1
+	WHERE tenant_id = $1 AND idempotency_key = $2
 	`
 
 	var event models.Event
 
-	err:= p.pool.QueryRow(ctx,query,key).Scan(
+	err:= p.pool.QueryRow(ctx,query,"default_tenant",key).Scan(
 		&event.ID,
 		&event.TenantID,
 		&event.Type,
@@ -321,6 +340,6 @@ func (p *PostgresStore) RecordDeliveryAttempt(attempt models.DeliveryAttempt) er
 // 		attempt.ErrorMessage,
 // 		attempt.AttemptedAt,
 // 	)
-	// return err
+	return nil
 // 
 }
