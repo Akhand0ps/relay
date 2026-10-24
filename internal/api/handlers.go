@@ -161,7 +161,7 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 		}
 
 		//add to worker pool
-		h.workerPool.Queue <- worker.DeliveryTask{
+		h.workerPool.Queue <- models.DeliveryTask{
 			Delivery: delivery,
 			Endpoint: ep,
 			Event: event,
@@ -339,7 +339,7 @@ func (h * Handler) ReplayHandler(w http.ResponseWriter, r *http.Request){
 
 			
 
-			h.workerPool.Queue <- worker.DeliveryTask{
+			h.workerPool.Queue <- models.DeliveryTask{
 				Delivery: delivery,
 				Endpoint: endpoint,
 				Event: *event,

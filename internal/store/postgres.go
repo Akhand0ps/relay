@@ -26,7 +26,6 @@ func NewPostgresStore(connStr string) (*PostgresStore,error){
 	if err != nil{
 		return nil,fmt.Errorf("unable to connect to database: %w",err)
 	}
-
 	return &PostgresStore{pool:pool},nil
 }
 

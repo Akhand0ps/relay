@@ -8,31 +8,26 @@ import (
 
 	"github.com/akhand0ps/relay/internal/id"
 	"github.com/akhand0ps/relay/internal/models"
+	"github.com/akhand0ps/relay/internal/queue"
 	"github.com/akhand0ps/relay/internal/signature"
 	"github.com/akhand0ps/relay/internal/store"
 )
 
 
-type DeliveryTask struct {
 
-	Delivery models.Delivery
-	Endpoint models.Endpoint
-	Event    models.Event
-}
-
-//workerpool or dispatcher
 
 type WorkerPool struct {
 
-	Queue chan DeliveryTask
+	// Queue chan models.DeliveryTask
+	Queue queue.Queue
 	client *http.Client
 	store store.Store
-}
+} 
 
-func NewWorkerPool(bufferSize int,store store.Store) *WorkerPool{
+func NewWorkerPool(bufferSize int,q queue.Queue,store store.Store) *WorkerPool{
 	
 	return &WorkerPool{
-		Queue: make(chan DeliveryTask,bufferSize),
+		Queue: q,
 		client: &http.Client{
 			Timeout: 10*time.Second,
 		},
@@ -48,14 +43,14 @@ func (wp *WorkerPool) Start(workerCount int){
 
 		go func(workerId int){
 
-			for task := range wp.Queue{
+			for task := range wp.Queue {
 
 				wp.processTask(workerId,task)
 			}
 		}(i)
 	}
 }
-func (wp *WorkerPool) processTask(workerId int,task DeliveryTask){
+func (wp *WorkerPool) processTask(workerId int,task models.DeliveryTask){
 
 	fmt.Printf("[Worker %d] Delivering %s to %s...\n",workerId,task.Event.Type,task.Endpoint.URL)
 
@@ -144,7 +139,7 @@ func (wp *WorkerPool) processTask(workerId int,task DeliveryTask){
 
 		// wait for the backoff delay in the background,
 		// then push back to queue!!
-		go func (t DeliveryTask, d time.Duration){
+		go func (t models.DeliveryTask, d time.Duration){
 			fmt.Printf("[worker %d] Scheduling retry #%d for %s in %v...\n", workerId,t.Delivery.AttemptCount,t.Endpoint.URL,d)
 			time.Sleep(d)
 			wp.Queue <- t

@@ -31,6 +31,13 @@ type Delivery struct {
 	UpdatedAt           time.Time            `json:"updated_at"`
 }
 
+type DeliveryTask struct {
+
+	Delivery Delivery
+	Endpoint Endpoint
+	Event    Event
+}
+
 type DeliveryAttempt struct {
 	ID     string    `json:"id"`
 	DeliveryId string  `json:"deliver_id"`
