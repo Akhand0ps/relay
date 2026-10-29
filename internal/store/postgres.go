@@ -341,3 +341,6 @@ func (p *PostgresStore) RecordDeliveryAttempt(attempt models.DeliveryAttempt) er
 	)
 	return err
 }	
+func (p *PostgresStore) Ping(ctx context.Context) error {
+	return p.pool.Ping(ctx)
+}

@@ -9,6 +9,7 @@ import (
 	"github.com/akhand0ps/relay/internal/queue"
 	"github.com/akhand0ps/relay/internal/store"
 	"github.com/akhand0ps/relay/internal/worker"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -41,7 +42,14 @@ func main() {
 	h := api.NewHandler(sharedStore, wp)
 
 	mux := http.NewServeMux()
+
+	// Observability & Health endpoints
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/health", api.HealthCheckHandler)
+	mux.HandleFunc("/health/live", h.LivenessHandler)
+	mux.HandleFunc("/health/ready", h.ReadinessHandler)
+
+	// Webhook API routes
 	mux.HandleFunc("POST /v1/events", h.IngestEventHandler)
 	mux.HandleFunc("GET /v1/events/{id}", h.GetEventHandler)
 	mux.HandleFunc("POST /v1/endpoints", h.CreateEndpointHandler)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -134,4 +135,8 @@ func (m *MemoryStore) SaveDelivery(d models.Delivery) error {
 
 func (m *MemoryStore) RecordDeliveryAttempt(attempt models.DeliveryAttempt) error {
     return nil
+}
+
+func (m *MemoryStore) Ping(ctx context.Context) error {
+	return nil
 }

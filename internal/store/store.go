@@ -4,7 +4,10 @@ import "github.com/akhand0ps/relay/internal/models"
 
 
 
+import "context"
+
 type Store interface {
+	Ping(ctx context.Context) error
 
 	Save(event models.Event) error
 	Get(id string) (*models.Event,error)

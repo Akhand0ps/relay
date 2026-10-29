@@ -9,6 +9,7 @@ import (
 
 	"github.com/akhand0ps/relay/internal/id"
 	"github.com/akhand0ps/relay/internal/limiter"
+	"github.com/akhand0ps/relay/internal/metrics"
 	"github.com/akhand0ps/relay/internal/models"
 	"github.com/akhand0ps/relay/internal/queue"
 	"github.com/akhand0ps/relay/internal/signature"
@@ -45,6 +46,10 @@ func (wp *WorkerPool) Start(workerCount int) {
 					continue
 				}
 				if task != nil {
+					// Update queue depth gauge
+					if depth, err := wp.Queue.Len(context.Background()); err == nil {
+						metrics.QueueDepth.Set(float64(depth))
+					}
 					wp.processTask(workerId, *task)
 				}
 			}
@@ -75,9 +80,13 @@ func (wp *WorkerPool) processTask(workerId int, task models.DeliveryTask) {
 	req.Header.Set("X-Relay-TimeStamp", fmt.Sprintf("%d", now))
 	req.Header.Set("X-Relay-Signature", sig)
 
+	// Measure HTTP delivery latency for Prometheus histogram
+	startCall := time.Now()
 	resp, err := wp.client.Do(req)
-	statusCode := 0
+	duration := time.Since(startCall).Seconds()
+	metrics.DeliveryDurationSeconds.WithLabelValues(task.Endpoint.ID).Observe(duration)
 
+	statusCode := 0
 	if resp != nil {
 		statusCode = resp.StatusCode
 		defer resp.Body.Close()
@@ -102,13 +111,17 @@ func (wp *WorkerPool) processTask(workerId int, task models.DeliveryTask) {
 		fmt.Printf("[Worker %d] Failed to record delivery attempt: %v\n", workerId, err)
 	}
 
+	statusStr := fmt.Sprintf("%d", statusCode)
+
 	// Determine if delivery succeeded
 	if err == nil && statusCode >= 200 && statusCode < 300 {
+		metrics.DeliveriesTotal.WithLabelValues(task.Endpoint.ID, "success", statusStr).Inc()
 		fmt.Printf("[Worker %d] ✔ Delivery SUCCESS to %s (Status: %d)\n", workerId, task.Endpoint.URL, statusCode)
 	} else {
 		try := ShouldRetry(statusCode, err)
 		if !try {
 			task.Delivery.Status = models.DeliveryStatusFailed
+			metrics.DeliveriesTotal.WithLabelValues(task.Endpoint.ID, "failed", statusStr).Inc()
 			fmt.Printf("[Worker %d] ❌ Permanent failure, not retrying\n", workerId)
 			return
 		}
@@ -116,10 +129,12 @@ func (wp *WorkerPool) processTask(workerId int, task models.DeliveryTask) {
 		task.Delivery.AttemptCount++
 		if task.Delivery.AttemptCount >= 5 {
 			task.Delivery.Status = models.DeliveryStatusDLQ
+			metrics.DeliveriesTotal.WithLabelValues(task.Endpoint.ID, "dlq", statusStr).Inc()
 			fmt.Printf("[Worker %d] Delivery %s exceeded max retries, sent to DLQ\n", workerId, task.Delivery.ID)
 			return
 		}
 
+		metrics.DeliveriesTotal.WithLabelValues(task.Endpoint.ID, "retrying", statusStr).Inc()
 		delay := CalculateBackoff(task.Delivery.AttemptCount)
 
 		// Wait for the backoff delay in background, then re-enqueue to Redis

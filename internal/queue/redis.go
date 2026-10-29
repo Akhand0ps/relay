@@ -57,6 +57,14 @@ func (rq *RedisQueue) Dequeue(ctx context.Context) (*models.DeliveryTask, error)
 	return &task, nil
 }
 
+func (rq *RedisQueue) Ping(ctx context.Context) error {
+	return rq.client.Ping(ctx).Err()
+}
+
+func (rq *RedisQueue) Len(ctx context.Context) (int64, error) {
+	return rq.client.LLen(ctx, rq.key).Result()
+}
+
 func (rq *RedisQueue) Close() error {
 	return rq.client.Close()
 }

@@ -2,12 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"context"
 	"errors"
 	"net/http"
 	"time"
 	// "log"
 
 	"github.com/akhand0ps/relay/internal/id"
+	"github.com/akhand0ps/relay/internal/metrics"
 	"github.com/akhand0ps/relay/internal/models"
 	"github.com/akhand0ps/relay/internal/store"
 	"github.com/akhand0ps/relay/internal/worker"
@@ -172,6 +174,8 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+
+	metrics.EventsIngestedTotal.WithLabelValues("accepted", event.Type).Inc()
 
 	w.Header().Set("Content-Type","application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -360,5 +364,48 @@ func (h * Handler) ReplayHandler(w http.ResponseWriter, r *http.Request){
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":"success",
 		"message":"Events replayed successfully",
+	})
+}
+
+func (h *Handler) LivenessHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"alive"}`))
+}
+
+func (h *Handler) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	pgErr := h.store.Ping(ctx)
+	redisErr := h.workerPool.Queue.Ping(ctx)
+
+	pgStatus := "ok"
+	if pgErr != nil {
+		pgStatus = pgErr.Error()
+	}
+
+	redisStatus := "ok"
+	if redisErr != nil {
+		redisStatus = redisErr.Error()
+	}
+
+	if pgErr != nil || redisErr != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   "unhealthy",
+			"postgres": pgStatus,
+			"redis":    redisStatus,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "ready",
+		"postgres": "ok",
+		"redis":    "ok",
 	})
 }

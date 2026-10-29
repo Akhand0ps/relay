@@ -343,6 +343,11 @@ relay/
 ├── internal/
 │   ├── api/
 │   │   └── handlers.go             # HTTP handlers & route definitions
+│   ├── limiter/
+│   │   ├── limiter.go              # Token Bucket per-destination rate limiter
+│   │   └── limiter_test.go         # Rate limiter burst & isolation unit tests
+│   ├── metrics/
+│   │   └── metrics.go              # Prometheus metrics instrumentation
 │   ├── id/
 │   │   └── id.go                   # Time-ordered UUIDv7 generator (evt_, ep_, whsec_)
 │   ├── models/
@@ -398,9 +403,10 @@ relay/
   - High-concurrency double-checked locking registry (`EndpointLimiter`)
   - Destination protection: eliminates thundering herds and 429 storms against slow clients
   - Unit test suite validating burst capacity, refill rates, and tenant isolation
-- [ ] **Phase 5: Observability**
-  - Prometheus metrics instrumentation (RPS, delivery latency, retry count)
-  - OpenTelemetry distributed tracing
+- [x] **Phase 5: Observability & Production Readiness**
+  - Prometheus metrics exporter (`/metrics`) measuring ingestion RPS, delivery outcomes, and queue depth
+  - High-precision histogram (`relay_worker_delivery_duration_seconds`) tracking p50/p95/p99 destination latency
+  - Kubernetes-native health probes: liveness (`/health/live`) and deep dependency readiness (`/health/ready`)
 
 ---
 
