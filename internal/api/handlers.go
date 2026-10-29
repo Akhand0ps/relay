@@ -160,11 +160,15 @@ func (h * Handler) IngestEventHandler(w http.ResponseWriter,r *http.Request){
 			return
 		}
 
-		//add to worker pool
-		h.workerPool.Queue <- models.DeliveryTask{
+		// Enqueue task to Redis distributed queue
+		task := models.DeliveryTask{
 			Delivery: delivery,
 			Endpoint: ep,
-			Event: event,
+			Event:    event,
+		}
+		if err := h.workerPool.Queue.Enqueue(r.Context(), task); err != nil {
+			http.Error(w, "Failed to enqueue delivery task", http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -339,10 +343,14 @@ func (h * Handler) ReplayHandler(w http.ResponseWriter, r *http.Request){
 
 			
 
-			h.workerPool.Queue <- models.DeliveryTask{
+			replayTask := models.DeliveryTask{
 				Delivery: delivery,
 				Endpoint: endpoint,
-				Event: *event,
+				Event:    *event,
+			}
+			if err := h.workerPool.Queue.Enqueue(r.Context(), replayTask); err != nil {
+				http.Error(w, "Failed to enqueue replay task", http.StatusInternalServerError)
+				return
 			}
 		}			
 	}

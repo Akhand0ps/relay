@@ -389,11 +389,15 @@ relay/
   - Durable persistence for events, endpoints, deliveries, and attempt audit logs
   - Race-condition proof idempotency via `(tenant_id, idempotency_key)` uniqueness
   - Timing-attack-resistant cryptographic verification (`hmac.Equal`) and unit test suite
-- [ ] **Phase 3: Redis Distributed Queue**
-  - Transition in-memory channel queue to Redis Streams for crash-proof persistence
-  - Consumer groups for multi-instance worker horizontal scaling
-- [ ] **Phase 4: Multi-Tenant Concurrency & Rate Limiting**
-  - Token bucket algorithm per tenant/destination to protect customer endpoints from overload
+- [x] **Phase 3: Redis Distributed Queue**
+  - Decoupled HTTP API producer from background workers via Redis (`LPush` / `BRPop`)
+  - Process crash resilience: queued tasks persist across server restarts and deployments
+  - Horizontal scalability: multiple worker instances pull from shared queue
+- [x] **Phase 4: Per-Destination Concurrency & Rate Limiting**
+  - Token Bucket rate limiter (`golang.org/x/time/rate`) per destination endpoint
+  - High-concurrency double-checked locking registry (`EndpointLimiter`)
+  - Destination protection: eliminates thundering herds and 429 storms against slow clients
+  - Unit test suite validating burst capacity, refill rates, and tenant isolation
 - [ ] **Phase 5: Observability**
   - Prometheus metrics instrumentation (RPS, delivery latency, retry count)
   - OpenTelemetry distributed tracing
